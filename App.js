@@ -7,7 +7,7 @@
  */
 
 import React, {Component} from 'react';
-import {Platform, StyleSheet, Text, View} from 'react-native';
+import {Platform, StyleSheet, Text, View, Button} from 'react-native';
 
 import { GoogleSignin, GoogleSigninButton, statusCodes } from 'react-native-google-signin';
 
@@ -26,6 +26,7 @@ export default class App extends Component<Props> {
     super(props);
     this.state = {
       isSigninInProgress: false,
+      permissionResult: '',
       userInfo: {},
     }
   }
@@ -39,7 +40,7 @@ export default class App extends Component<Props> {
       await GoogleSignin.hasPlayServices();
       const userInfo = await GoogleSignin.signIn();
       console.log(JSON.stringify(userInfo));
-      this.setState({ userInfo });
+      this.setState({ userInfo, signedIn: true });
     } catch (error) {
       if (error.code === statusCodes.SIGN_IN_CANCELLED) {
         // user cancelled the login flow
@@ -51,28 +52,98 @@ export default class App extends Component<Props> {
         // some other error happened
       }
     }
-};
+  };
+
+  _signOut = async () => {
+    try {
+      await GoogleSignin.revokeAccess();
+      await GoogleSignin.signOut();
+      this.setState({ userInfo: null, signedIn: false, permissionResult: '' }); // Remember to remove the user from your app's state as well
+    } catch (error) {
+      console.error(error);
+    }
+  };
+
+  _getMoviesFromApiAsync = async () => {
+    if(this.state.userInfo.user === undefined){
+      this.setState({
+        permissionResult: `Error: no user. Try logging in.`
+      });
+      return;
+    }
+    return fetch('https://1c5w5ogswe.execute-api.us-west-2.amazonaws.com/api/',
+      {
+        method: 'POST',
+        headers: {
+            "Content-Type": "application/json; charset=utf-8",
+        },
+        body: JSON.stringify({email: this.state.userInfo.user.email})
+      })
+      .then((response) => response.json())
+      .then((responseJson) => {
+        console.log(responseJson);
+        console.log(this);
+        if(responseJson.mac_address) {
+          this.setState({
+            permissionResult: `Authorized ${responseJson.mac_address}`
+          });
+        } else {
+          this.setState({
+            permissionResult: `Error: ${responseJson.error}`
+          });
+        }
+
+      })
+      .catch((error) => {
+        console.error(error);
+      });
+  }
 
   render() {
     return (
       <View style={styles.container}>
-      <GoogleSigninButton
-        style={{ width: 200, height: 48, top: 30 }}
-        size={GoogleSigninButton.Size.Wide}
-        color={GoogleSigninButton.Color.Light}
-        onPress={this._signIn}
-        disabled={this.state.isSigninInProgress} />
-        <View style={{...styles.containerLeft, top: 35}}>
-        {
-          Object.keys(this.state.userInfo).map((key) => {
-            return(
-              <View key={key}>
-                <Text numberOfLines={1} style={{ textAlign: "left" }}>{key}: {String(this.state.userInfo[key])}</Text>
-              </View>
+      {this.state.signedIn ? (
+          <Button style={{ top: 30, height: 48 }} title="Sign Out" onPress={this._signOut}/>
+        )
+        :
+        (
+          <GoogleSigninButton
+            style={{ width: 200, height: 48, top: 30 }}
+            size={GoogleSigninButton.Size.Wide}
+            color={GoogleSigninButton.Color.Light}
+            onPress={this._signIn}
+            disabled={this.state.isSigninInProgress}
+          />
+        )
+      }
+
+          <View style={{...styles.containerLeft, top: 35}}>
+            {
+              this.state.userInfo ? (
+              Object.keys(this.state.userInfo).map((key) => {
+                return(
+                  <View key={key}>
+                    <Text numberOfLines={1} style={{ textAlign: "left" }}>{key}: {String(this.state.userInfo[key])}</Text>
+                  </View>
+                  )
+                })
               )
-            })
-        }
-        </View>
+              :
+              null
+            }
+          </View>
+
+          {
+            this.state.signedIn ? (
+              <React.Fragment>
+                <Text>{this.state.permissionResult}</Text>
+                <Button title="Check MAC Authorization" onPress={this._getMoviesFromApiAsync}>test</Button>
+              </React.Fragment>
+            )
+            :
+            null
+          }
+
       </View>
     );
   }
@@ -83,6 +154,7 @@ const styles = StyleSheet.create({
     flex: 1,
     alignItems: "center",
     backgroundColor: '#F5FCFF',
+    padding: 10
   },
   containerLeft: {
     flex: 1,
